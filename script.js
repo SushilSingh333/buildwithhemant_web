@@ -95,7 +95,6 @@
 
     // --- AUTO POPUP (once per session) ---
     setTimeout(() => {
-        // Always show again after refresh; sessionStorage gating was preventing it.
         openModal({ checkSessionShown: false });
     }, AUTO_OPEN_MS);
 
@@ -217,21 +216,53 @@
 
             const requestOptions = {
                 method: 'POST',
-                mode: 'no-cors',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             };
 
-            try {
-                const primaryRequest = fetch(WEBHOOK_URL, requestOptions);
-                const backupRequest = (BACKUP_WEBHOOK_URL && BACKUP_WEBHOOK_URL.length > 5)
-                    ? fetch(BACKUP_WEBHOOK_URL, requestOptions)
-                    : Promise.resolve("No backup configured");
+            const postWithTimeout = async (url, options, timeoutMs = 8000) => {
+                if (!url) return false;
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const res = await fetch(url, { ...options, signal: controller.signal });
+                    clearTimeout(timer);
+                    return !!res && (res.ok || res.status === 0); // status 0 for opaque/no-cors responses
+                } catch (err) {
+                    clearTimeout(timer);
+                    console.warn('Webhook request failed:', err);
+                    return false;
+                }
+            };
 
-                await Promise.allSettled([primaryRequest, backupRequest]);
+            try {
+                const [primaryOk, backupOk] = await Promise.all([
+                    postWithTimeout(WEBHOOK_URL, requestOptions),
+                    postWithTimeout(BACKUP_WEBHOOK_URL, requestOptions)
+                ]);
+
+                if (!primaryOk && !backupOk) {
+                    if (leadSuccessMessage) {
+                        leadSuccessMessage.hidden = false;
+                        leadSuccessMessage.textContent = 'We could not submit your request. Please check your connection and try again.';
+                        leadSuccessMessage.classList.add('is-error');
+                    }
+                    if (submitBtn) {
+                        submitBtn.innerText = 'Try Again';
+                        submitBtn.disabled = false;
+                    }
+                    return;
+                }
             } catch (error) {
                 console.error('Submission error:', error);
-                // Continue with success UX even if the webhook fails.
+                if (leadSuccessMessage) {
+                    leadSuccessMessage.hidden = false;
+                    leadSuccessMessage.textContent = 'We could not submit your request. Please check your connection and try again.';
+                    leadSuccessMessage.classList.add('is-error');
+                }
+                safeSetDisabled(false);
+                if (submitBtn) submitBtn.innerText = 'Try Again';
+                return;
             }
 
             if (leadSuccessMessage) {

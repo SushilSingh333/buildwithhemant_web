@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Admissions Open 2026-27 – SMS Varanasi | School of Management Sciences</title>
     <meta name="description" content="Admissions Open for 2026-27 at SMS Varanasi – Among Top 50 B-Schools in India. NAAC 'A' Grade | Autonomous College | MBA, MCA, BBA, BCA, B.Com, M.Com Programs. Apply Now!">
@@ -771,7 +772,14 @@
             </div>
             <div class="form-group">
                 <label for="lead_phone">Phone Number</label>
-                <input id="lead_phone" type="number" name="phone" placeholder="10-digit mobile number" required inputmode="numeric" min="0" step="1">
+                <input id="lead_phone"
+                       type="tel"
+                       name="phone"
+                       placeholder="10-digit mobile number"
+                       required
+                       inputmode="numeric"
+                       pattern="\\d{10}"
+                       autocomplete="tel">
                 <div class="field-error" data-error-for="phone" aria-live="polite"></div>
             </div>
             <div class="form-group">
