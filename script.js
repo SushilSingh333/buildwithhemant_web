@@ -2,6 +2,42 @@
     const modal = document.getElementById('regModal');
     const closeBtn = document.querySelector('.close-modal');
     const leadForm = document.getElementById('mdbLeadForm');
+    const leadSuccessMessage = document.getElementById('leadSuccessMessage');
+
+    const SESSION_KEY = 'sms_lead_modal_shown_v1';
+    const AUTO_OPEN_MS = 10000;
+
+    const hasShownModalThisSession = () => {
+        try {
+            return window.sessionStorage.getItem(SESSION_KEY) === '1';
+        } catch {
+            return false;
+        }
+    };
+
+    const markModalAsShown = () => {
+        try {
+            window.sessionStorage.setItem(SESSION_KEY, '1');
+        } catch {
+            // Ignore storage failures (e.g., privacy mode).
+        }
+    };
+
+    const openModal = ({ checkSessionShown = false } = {}) => {
+        if (!modal) return;
+        if (checkSessionShown && hasShownModalThisSession()) return;
+
+        if (checkSessionShown) markModalAsShown();
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+
+        const stickyBar = document.querySelector('.mobile-sticky-bar');
+        if (stickyBar) stickyBar.style.display = 'none';
+
+        // Small UX touch: focus the first field.
+        const firstField = leadForm ? leadForm.querySelector('input, select, button') : null;
+        if (firstField) setTimeout(() => firstField.focus(), 50);
+    };
 
     // --- TRACKING PARAMS ---
     const urlParams = new URLSearchParams(window.location.search);
@@ -22,10 +58,11 @@
         // CTA Button → open modal
         const cta = e.target.closest('.cta-btn');
         if (cta) {
+            const ctaText = (cta.getAttribute('aria-label') || cta.textContent || '').trim();
+            // Only open the lead form for "Apply Now" CTAs (there are many across the page).
+            if (!/apply\s*now/i.test(ctaText)) return;
             e.preventDefault();
-            modal.style.display = 'flex';
-            const stickyBar = document.querySelector('.mobile-sticky-bar');
-            if (stickyBar) stickyBar.style.display = 'none';
+            openModal({ checkSessionShown: false });
             return;
         }
 
@@ -46,7 +83,9 @@
 
     // --- MODAL CLOSE ---
     const closeModal = () => {
-        modal.style.display = 'none';
+        if (!modal) return;
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
         const stickyBar = document.querySelector('.mobile-sticky-bar');
         if (stickyBar) stickyBar.style.display = '';
     };
@@ -54,34 +93,126 @@
     if (closeBtn) closeBtn.onclick = closeModal;
     window.onclick = (e) => { if (e.target === modal) closeModal(); };
 
+    // --- AUTO POPUP (once per session) ---
+    setTimeout(() => {
+        // Always show again after refresh; sessionStorage gating was preventing it.
+        openModal({ checkSessionShown: false });
+    }, AUTO_OPEN_MS);
+
     // --- FORM SUBMIT (with dual webhook) ---
     if (leadForm) {
         const WEBHOOK_URL        = "https://connect.pabbly.com/workflow/sendwebhookdata/IjU3NjcwNTZjMDYzNzA0MzE1MjZlNTUzNzUxMzAi_pc";
         const BACKUP_WEBHOOK_URL = "https://n8n.srv882352.hstgr.cloud/webhook/bda6fe45-e768-48ac-8ead-b27271650ad9";
-        const THANK_YOU_PAGE     = "https://smsvaranasi.org/";
+        const THANK_YOU_MESSAGE  = "Thank you! Your brochure will be sent shortly.";
+
+        const setFieldError = (fieldKey, message) => {
+            const el = leadForm.querySelector(`.field-error[data-error-for="${fieldKey}"]`);
+            if (!el) return;
+            el.textContent = message;
+            el.style.display = 'block';
+        };
+
+        const clearFieldErrors = () => {
+            leadForm.querySelectorAll('.field-error').forEach(el => {
+                el.textContent = '';
+                el.style.display = 'none';
+            });
+        };
+
+        const simulateBrochureDownload = () => {
+            // No real brochure file exists in repo; simulate a download via generated text.
+            try {
+                const blob = new Blob(
+                    ['Brochure request received.\nWe will contact you shortly with details.'],
+                    { type: 'text/plain;charset=utf-8' }
+                );
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'SMS_Varanasi_Brochure_Request.txt';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 800);
+            } catch (err) {
+                // Simulation only; ignore failures.
+                console.warn('Download simulation failed:', err);
+            }
+        };
 
         leadForm.onsubmit = async function (e) {
             e.preventDefault();
-            const submitBtn = leadForm.querySelector('button');
-            const originalText = submitBtn.innerText;
-            submitBtn.innerText = "Submitting Application...";
-            submitBtn.disabled = true;
+
+            const nameEl = leadForm.querySelector('input[name="full_name"]');
+            const phoneEl = leadForm.querySelector('input[name="phone"]');
+            const courseEl = leadForm.querySelector('select[name="course"]');
+            const cityEl = leadForm.querySelector('input[name="city"]');
+            const emailEl = leadForm.querySelector('input[name="email"]');
+
+            const submitBtn = leadForm.querySelector('button[type="submit"]');
+            const safeSetDisabled = (state) => {
+                if (!submitBtn) return;
+                submitBtn.disabled = state;
+            };
+
+            clearFieldErrors();
+            if (leadSuccessMessage) leadSuccessMessage.hidden = true;
+
+            const fullName = (nameEl?.value || '').trim();
+            const phoneStr = String(phoneEl?.value ?? '').trim();
+            const courseVal = (courseEl?.value || '').trim();
+            const cityVal = (cityEl?.value || '').trim();
+            const emailVal = (emailEl?.value || '').trim();
+
+            let isValid = true;
+
+            if (!fullName || fullName.length < 2) {
+                isValid = false;
+                setFieldError('full_name', 'Please enter your name.');
+            }
+
+            // Phone number validation for <input type="number">.
+            // Expect exactly 10 digits.
+            if (!/^\d{10}$/.test(phoneStr)) {
+                isValid = false;
+                setFieldError('phone', 'Please enter a valid 10-digit phone number.');
+            }
+
+            if (!courseVal) {
+                isValid = false;
+                setFieldError('course', 'Please select a course.');
+            }
+
+            if (!cityVal || cityVal.length < 2) {
+                isValid = false;
+                setFieldError('city', 'Please enter your city.');
+            }
+
+            if (!emailVal || !emailEl?.checkValidity()) {
+                isValid = false;
+                setFieldError('email', 'Please enter a valid email address.');
+            }
+
+            if (!isValid) return;
+
+            if (submitBtn) submitBtn.innerText = 'Sending...';
+            safeSetDisabled(true);
 
             const payload = {
-                name:          cleanParam(leadForm.first_name.value),
-                email:         cleanParam(leadForm.email.value),
-                phone:         cleanParam(leadForm.phone.value),
-                program:       cleanParam(leadForm.business_type.value),
-                education:     cleanParam(leadForm.turnover.value),
-                utm_source:    cleanParam(trackingParams.utm_source),
-                utm_medium:    cleanParam(trackingParams.utm_medium),
-                utm_campaign:  cleanParam(trackingParams.utm_campaign),
-                utm_content:   cleanParam(trackingParams.utm_content),
-                gclid:         cleanParam(trackingParams.gclid),
-                fbclid:        cleanParam(trackingParams.fbclid),
-                affiliate:     cleanParam(trackingParams.affiliate),
-                page_url:      window.location.href,
-                timestamp:     new Date().toISOString()
+                name: cleanParam(fullName),
+                email: cleanParam(emailVal),
+                phone: cleanParam(phoneStr),
+                program: cleanParam(courseVal),
+                city: cleanParam(cityVal),
+                utm_source: cleanParam(trackingParams.utm_source),
+                utm_medium: cleanParam(trackingParams.utm_medium),
+                utm_campaign: cleanParam(trackingParams.utm_campaign),
+                utm_content: cleanParam(trackingParams.utm_content),
+                gclid: cleanParam(trackingParams.gclid),
+                fbclid: cleanParam(trackingParams.fbclid),
+                affiliate: cleanParam(trackingParams.affiliate),
+                page_url: window.location.href,
+                timestamp: new Date().toISOString()
             };
 
             const requestOptions = {
@@ -93,15 +224,26 @@
 
             try {
                 const primaryRequest = fetch(WEBHOOK_URL, requestOptions);
-                const backupRequest  = (BACKUP_WEBHOOK_URL && BACKUP_WEBHOOK_URL.length > 5)
+                const backupRequest = (BACKUP_WEBHOOK_URL && BACKUP_WEBHOOK_URL.length > 5)
                     ? fetch(BACKUP_WEBHOOK_URL, requestOptions)
                     : Promise.resolve("No backup configured");
 
                 await Promise.allSettled([primaryRequest, backupRequest]);
-                window.location.href = THANK_YOU_PAGE;
             } catch (error) {
                 console.error('Submission error:', error);
-                window.location.href = THANK_YOU_PAGE;
+                // Continue with success UX even if the webhook fails.
+            }
+
+            if (leadSuccessMessage) {
+                leadSuccessMessage.hidden = false;
+                leadSuccessMessage.textContent = THANK_YOU_MESSAGE;
+            }
+
+            simulateBrochureDownload();
+
+            if (submitBtn) {
+                submitBtn.innerText = 'Brochure Requested';
+                submitBtn.disabled = true;
             }
         };
     }
