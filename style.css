@@ -284,7 +284,7 @@ img { max-width: 100%; }
 }
 
 .cta-btn:hover {
-    color: #1d1d1d !important;
+    color: #dac83c !important;
     animation-play-state: paused;
     transform: scale(1.05);
     text-decoration: none;
