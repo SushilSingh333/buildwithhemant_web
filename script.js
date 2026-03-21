@@ -81,6 +81,39 @@
         }
     });
 
+    // --- PROGRAM CARD POPUP ---
+    const courseValueMap = {
+        'MBA': 'MBA',
+        'MCA': 'MCA',
+        'M.COM': 'M.COM',
+        'BBA': 'BBA',
+        'BCA': 'BCA',
+        'B.COM (HONS)': 'B.Com(H)',
+        'B.A. (HONS) MASS COMM': 'B.A(Mass Comm.)'
+    };
+
+    const handleProgramCardClick = (card) => {
+        const title = (card.querySelector('h3')?.textContent || '').trim().toUpperCase();
+        const mappedVal = courseValueMap[title];
+        if (leadForm && mappedVal) {
+            const courseSelect = leadForm.querySelector('select[name="course"]');
+            if (courseSelect) courseSelect.value = mappedVal;
+        }
+        openModal({ checkSessionShown: false });
+    };
+
+    document.querySelectorAll('.program-card').forEach(card => {
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.addEventListener('click', () => handleProgramCardClick(card));
+        card.addEventListener('keypress', (ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                handleProgramCardClick(card);
+            }
+        });
+    });
+
     // --- MODAL CLOSE ---
     const closeModal = () => {
         if (!modal) return;
